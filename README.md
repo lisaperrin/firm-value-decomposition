@@ -208,7 +208,7 @@ Conventions, since they bite otherwise:
 
 ```bash
 uv sync --all-groups --extra live
-uv run pytest -q                                  # 106 tests, offline, ~4 s
+uv run pytest -q                                  # 106 tests, offline, ~4 s (1 needs the live extra)
 uv run ruff check . && uv run ruff format --check . && uv run mypy
 uv run python scripts/validate_plugin.py --with-claude-cli
 ```

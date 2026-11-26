@@ -78,8 +78,8 @@ files = ["src"]
 module = ["matplotlib.*", "scipy.*"]
 ignore_missing_imports = true
 
-# The live extra is optional and private, so environments without it (CI among them)
-# must still type-check; with the extra installed mypy reads MarketLens' own types.
+# The live extra is optional, so environments without it (CI among them) must still
+# type-check; with the extra installed mypy reads MarketLens' own types.
 [[tool.mypy.overrides]]
 module = ["marketlens.*"]
 ignore_missing_imports = true
