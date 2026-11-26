@@ -32,19 +32,54 @@ HEADCOUNT_SCALE = 1e3
 
 
 class StatementLike(Protocol):
-    """One fiscal year of statement lines, structurally compatible with MarketLens."""
+    """One fiscal year of statement lines, structurally compatible with MarketLens.
 
-    symbol: str
-    fiscal_year_end: date
-    currency: str
-    net_ppe: float | None
-    capex: float | None
-    rd_expense: float | None
-    sga_expense: float | None
-    total_debt: float | None
-    cash: float | None
-    shares_outstanding: float | None
-    price_at_year_end: float | None
+    Members are read-only properties so that frozen dataclasses satisfy the protocol.
+    """
+
+    @property
+    def symbol(self) -> str:
+        """Ticker symbol."""
+
+    @property
+    def fiscal_year_end(self) -> date:
+        """Last day of the fiscal year."""
+
+    @property
+    def currency(self) -> str:
+        """Reporting currency."""
+
+    @property
+    def net_ppe(self) -> float | None:
+        """Net property, plant and equipment."""
+
+    @property
+    def capex(self) -> float | None:
+        """Capital expenditure as a positive outflow."""
+
+    @property
+    def rd_expense(self) -> float | None:
+        """Research and development expense."""
+
+    @property
+    def sga_expense(self) -> float | None:
+        """Selling, general and administrative expense."""
+
+    @property
+    def total_debt(self) -> float | None:
+        """Gross debt."""
+
+    @property
+    def cash(self) -> float | None:
+        """Cash and equivalents."""
+
+    @property
+    def shares_outstanding(self) -> float | None:
+        """Shares outstanding at fiscal year end."""
+
+    @property
+    def price_at_year_end(self) -> float | None:
+        """Share price on or before fiscal year end."""
 
 
 class LiveDataError(FirmValueError):
