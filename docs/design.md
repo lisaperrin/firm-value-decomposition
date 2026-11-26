@@ -80,6 +80,19 @@ the risk in this project is wrong economics, and `structural-reviewer` checks
 the first-order-condition algebra, the value identity and the Monte Carlo
 tests the way MarketLens' `quant-reviewer` checks indicator maths.
 
+**Live mode.** The one feature that connects this project to MarketLens: a
+listed company's statements become a one-firm panel and are decomposed under
+given parameters. The dependency runs one way, firmvalue imports MarketLens as
+an optional extra and MarketLens knows nothing of firmvalue, and the contract
+is the `Statements` record MarketLens exposes, which firmvalue types
+structurally so that its own tests need neither the package nor the network.
+Three honest limits shaped the design: Yahoo has no advertising line, so brand
+capital is a share of SG&A; Yahoo has no headcount history, so labor is the
+latest headcount carried back; and a few years of one firm cannot identify
+the parameters, so live mode applies rather than estimates, and prints the
+observed and implied valuation ratios next to each other so the user sees how
+far the applied parameters are from the market's pricing.
+
 ## Decisions left to users
 
 - Depreciation and separation rates (`InputSpec`).
@@ -87,3 +100,5 @@ tests the way MarketLens' `quant-reviewer` checks indicator maths.
 - Group definitions for separate estimation.
 - Whether to estimate cost curvature.
 - Number of portfolios in the cross-sectional fit statistic.
+- In live mode: the SG&A share standing in for advertising, the tax rate for
+  non-US filers, and which parameters to apply.

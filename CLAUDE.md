@@ -6,7 +6,7 @@ repository (`.claude-plugin/`, `skills/`, `agents/`, `hooks/`, `.mcp.json`).
 
 ## Commands
 
-- `uv sync --all-groups` installs everything.
+- `uv sync --all-groups --extra live` installs everything, including MarketLens for live mode.
 - `uv run pytest -q` runs the suite (a few seconds, no network).
 - `uv run ruff check . && uv run ruff format --check . && uv run mypy` is the lint gate.
 - `uv run firmvalue --help` is the CLI; `uv run firmvalue-mcp` starts the MCP server.
@@ -22,6 +22,9 @@ repository (`.claude-plugin/`, `skills/`, `agents/`, `hooks/`, `.mcp.json`).
   errors, fit statistics. Quadratic costs are solved by non-negative least squares.
 - `capital.py`, `tax.py`, `compustat.py`: data construction. `simulate.py`: synthetic panels.
 - `io.py`: reading and writing panels and parameter files, share tables, Markdown rendering.
+- `live.py`: statements from MarketLens (optional extra `live`) to a one-firm panel and its
+  decomposition; every proxy is recorded in `notes`. Tests use `tests/live_fixtures.py`, never
+  the network, and replace `live.statements_source`.
 - `cli.py` and `mcp_server.py` are thin; logic lives in the modules above.
 
 ## Conventions

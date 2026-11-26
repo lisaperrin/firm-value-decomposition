@@ -31,6 +31,9 @@ this package expects so that the same pipeline runs on real data.
   the firm-year, portfolio and aggregate time-series level.
 - Decomposes firm value into input values and shares, and plots their history.
 - Simulates panels from the model for Monte Carlo checks of the estimator.
+- Decomposes listed companies from their published statements through
+  [MarketLens](https://github.com/lisaperrin/marketlens), with every proxy the
+  construction needs stated in the output.
 - Exposes all of it as a typed library, a CLI with `--json` output, a Model
   Context Protocol server and a Claude Code plugin that share one code path.
 
@@ -108,6 +111,7 @@ uv run firmvalue simulate --out panel.csv --firms 400 --seed 0
 uv run firmvalue estimate panel.csv --out parameters.json
 uv run firmvalue shares panel.csv parameters.json --out decomposition.csv
 uv run firmvalue figure panel.csv parameters.json --out shares.png
+uv run firmvalue live NVDA                 # needs the `live` extra, see below
 ```
 
 Add `--json` before any command for machine-readable output, identical to what
@@ -141,9 +145,10 @@ the server's environment and can take a minute; later launches are instant.
 
 | Component | Name | What it does |
 |-----------|------|--------------|
-| MCP server | `firmvalue` | Tools `estimate_parameters`, `value_shares`, `decompose_firm`, `simulate_demo_panel`, `published_value_shares`. |
+| MCP server | `firmvalue` | Tools `estimate_parameters`, `value_shares`, `decompose_firm`, `decompose_live`, `simulate_demo_panel`, `published_value_shares`. |
 | Skill | `/firmvalue:estimate panel.csv` | Fits the model to a panel and reports estimates, standard errors and fit. |
 | Skill | `/firmvalue:decompose ...` | Shares for a panel, or for one firm-year from its stocks and flows. |
+| Skill | `/firmvalue:live NVDA [AMD]` | Shares for listed companies from their published statements. |
 | Skill | `/firmvalue:explain-model [topic]` | Walks through the model from the repository's own sources. |
 | Agent | `structural-reviewer` | Checks shadow-value algebra, the value identity, the estimator and the simulator against the stated model and the tests. |
 | Hook | `SessionStart` | Announces the tools so Claude reaches for them instead of computing shares by hand. |
@@ -187,6 +192,42 @@ Labor's parameter is in millions of dollars per thousand employees, so a
 value of 900 at a hiring rate of 13 percent and a 35 percent tax rate puts
 the shadow value of an installed employee at about 76 thousand dollars.
 
+## Live mode: a real company from its statements
+
+```bash
+uv sync --extra live
+uv run firmvalue live NVDA
+uv run firmvalue live NVDA AMD INTC --years 4 --parameters parameters.json
+```
+
+Live mode pulls a few fiscal years of balance sheet, income statement and cash
+flow lines through MarketLens' `get_statements`, builds the four stocks and
+reports the shares for the latest year, with the history of shares by year in
+the JSON output. The construction, and where it bends:
+
+- physical capital = net property, plant and equipment; flow = capital expenditure;
+- knowledge capital = R&D accumulated at 15 percent depreciation, initialised
+  from the first observed year, which with four years of statements is a strong
+  assumption and is said so in the output;
+- brand capital = a share of SG&A (30 percent by default, `--brand-share`)
+  accumulated at 50 percent depreciation, because Yahoo publishes no
+  advertising line;
+- labor = the latest headcount carried across all years, so hiring equals
+  replacement of separations and the labor share is rough;
+- market value = year-end price times shares plus debt, optionally net of cash;
+- tax = United States statutory schedule unless `--tax-rate` is given, flagged
+  for non-US filers.
+
+A few years of one firm's statements cannot identify the adjustment cost
+parameters, so live mode applies parameters rather than estimating them: a
+parameters file from `estimate`, or otherwise an illustrative calibration that
+the output labels as such. The observed and implied valuation ratios are
+printed side by side, so the distance between the parameters and the market's
+pricing of that firm is visible rather than hidden.
+
+MarketLens is an optional dependency and the test suite never touches the
+network; statement fixtures live in `tests/live_fixtures.py`.
+
 ## Using Compustat data
 
 `firmvalue prepare` reads a Fundamentals Annual extract with the lower-case
@@ -221,8 +262,9 @@ separately as well as pooled.
 - The fit statistics are this package's definitions. The paper's moment
   conditions are documented there; the statistics here are designed to answer
   the same question but are not identical.
-- The demonstration data are synthetic. Nothing in this repository is an
-  empirical result about U.S. firms.
+- The demonstration data are synthetic, and live mode applies parameters
+  rather than estimating them. Nothing in this repository is an empirical
+  result about U.S. firms.
 
 ## Project layout
 
@@ -239,6 +281,7 @@ src/firmvalue/
   plotting.py     stacked-area share histories
   reference.py    published shares from the paper
   io.py           panel and parameter files, share tables, Markdown rendering
+  live.py         listed companies from MarketLens statements (optional extra)
   errors.py       FirmValueError and friends
   cli.py          Typer command-line interface
   mcp_server.py   MCP stdio server exposing the same operations as tools
