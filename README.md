@@ -27,16 +27,17 @@ note  headcount is the latest value carried across all years; hiring equals repl
 separations, so the labor share is a rough figure
 ```
 
-I started this after a corporate finance lecture on the paper. The result that makes it work:
-with constant returns to scale in production and in adjustment costs, firm value is exactly
-the sum of each installed input times its shadow value, so "how much of this company is its
-R&D, its people, its brand" has a model answer. The paper's data is Compustat, which I don't
-have, so the repo ships a simulator that draws panels from the model, an estimator that gets
-the parameters back out of them, and an adapter for Compustat if you do have it. Live mode
-pulls real statements through [marketlens](https://github.com/lisaperrin/marketlens).
+I started this after the paper came up in a corporate finance lecture. The trick behind it is
+old (Hayashi 1982): if production and adjustment costs have constant returns to scale, firm
+value equals the sum over inputs of installed stock times shadow value. Nothing is left
+over, so you can ask what fraction of a company is its R&D stock or its workforce and get a
+number out of the model. The paper estimates this on Compustat, which I don't have access
+to. So the repo has a simulator that draws panels from the model, an estimator that recovers
+the parameters from those panels, and an adapter for Compustat in case you do have it. Live
+mode gets real statements through [marketlens](https://github.com/lisaperrin/marketlens).
 
-Nothing here is an empirical result. The demo is synthetic and live mode applies parameters
-rather than estimating them.
+None of the numbers in here are empirical results. The demo is synthetic, and live mode
+applies parameters instead of estimating them.
 
 ## Install
 
@@ -66,10 +67,10 @@ one line and exit 1.
 
 ![Value shares over time, synthetic demo](docs/figures/shares.png)
 
-That figure is `firmvalue demo`: 800 synthetic firms, 1975 to 2015, two groups calibrated so
-their composition resembles the paper's low- and high-skill industries. The kink in 1987 is
-the 1986 tax reform taking the statutory rate from 46 to 34 percent over two years, which
-moves every shadow value.
+The figure is what `firmvalue demo` produces: 800 synthetic firms over 1975 to 2015, in two
+groups whose capital mix is set up to look like the paper's low- and high-skill industries.
+The kink around 1987 is the 1986 tax reform. The statutory rate goes from 46 to 34 percent in
+two steps and every shadow value moves with it.
 
 ## The model
 
@@ -84,39 +85,40 @@ Hayashi's result holds input by input:
 
 $$V_t = \sum_j q_{j,t}\,X_{j,t+1}.$$
 
-Each $q_j$ is the after-tax marginal cost of one more unit. Capex is capitalised and costs 1.
-R&D and advertising are expensed and cost $1-\tau$. Labor has no purchase price, only the
-hiring cost.
+Each $q_j$ is the after-tax marginal cost of one more unit. Capex is capitalised, so a unit
+costs 1. R&D and advertising are expensed, so a unit costs $1-\tau$. Labor has no purchase
+price at all, just the hiring cost.
 
 $$q_K = 1 + (1-\tau)\,\theta_K r_K^{\nu_K-1}, \qquad
 q_N = (1-\tau)\big(1 + \theta_N r_N^{\nu_N-1}\big), \qquad
 q_L = (1-\tau)\,\theta_L h^{\nu_L-1},$$
 
-with $r_j = I_j/X_j$ the investment rate, $h$ the hiring rate, and $q_B$ like $q_N$. Market
-share of input $j$ is $q_j X_j / V$. Book shares divide each capital stock by $K+N+B$; labor
-has no book value, which is why it sits at zero in the book column of the paper's Table 2.
+where $r_j = I_j/X_j$ is the investment rate, $h$ the hiring rate, and $q_B$ has the same form
+as $q_N$. The market share of input $j$ is $q_j X_j / V$. Book shares divide each capital
+stock by $K+N+B$. Labor has no book value, which is why that cell is zero in the paper's
+Table 2.
 
 ### Estimation
 
-The target is the valuation ratio $V / (K+N+B)$. Under the identity its model counterpart is
-linear in the $\theta_j$ when costs are quadratic, so the estimator is non-negative least
-squares; when the curvatures $\nu_j$ are estimated too, that solution seeds a bounded
-trust-region solver. Standard errors are clustered by firm. Fit is reported three ways, each
-as $1 - SSR/SST$:
+The thing being fitted is the valuation ratio $V / (K+N+B)$. With quadratic costs the model
+version of that ratio is linear in the $\theta_j$, so the estimator is plain non-negative
+least squares. If you also estimate the curvatures $\nu_j$, the NNLS solution is the starting
+point for a bounded trust-region solve. Standard errors are clustered by firm. Fit is
+reported three ways, all as $1 - SSR/SST$:
 
 - pooled, over every firm-year;
 - time series, the annual aggregate ratio against its model value;
-- cross section, averages over ten portfolios sorted each year on the previous year's
-  observed ratio, so the sort can't favour the model.
+- cross section, averages over ten portfolios formed each year on the previous year's
+  observed ratio (lagged, so the sorting variable isn't the thing being fitted).
 
-These are my definitions, built to answer the same question as the paper's moments. They
-aren't the paper's moments.
+I should say that these are my fit measures. They are meant to answer the same question as
+the paper's moment conditions but they are not the same moments.
 
-On the demo panel (400 firms per group, seed 0) the estimator returns 2.11 (0.14), 845 (29),
-33.5 (0.6), 7.04 (0.14) for the low-skill group against true values 2, 900, 32, 7, in the order
-physical, labor, knowledge, brand; standard errors in parentheses. Labor's parameter is in
-millions per thousand employees, so 900 at a 13 percent hiring rate and a 35 percent tax
-rate values an installed employee at about 76 thousand dollars.
+On the demo panel (400 firms per group, seed 0) the low-skill group comes back as 2.11 (0.14),
+845 (29), 33.5 (0.6), 7.04 (0.14) against true values of 2, 900, 32, 7, in the order physical,
+labor, knowledge, brand, standard errors in parentheses. The labor parameter is in millions
+per thousand employees. At a 13 percent hiring rate and a 35 percent tax rate, 900 works out
+to roughly 76 thousand dollars per installed employee.
 
 ## Live mode
 
@@ -126,28 +128,32 @@ firmvalue live NVDA
 firmvalue live NVDA AMD INTC --years 4 --parameters parameters.json --brand-share 0.3
 ```
 
-`live` calls marketlens' `get_statements` for a few fiscal years of balance sheet, income and
-cash flow lines, builds the four stocks and decomposes the latest year. JSON output has every
-year. What it uses, and where it bends:
+`live` calls marketlens' `get_statements` for a few fiscal years of balance sheet, income
+statement and cash flow lines, builds the four stocks from them and decomposes the latest
+year. The JSON output has all years. How each stock is built, and the shortcuts involved:
 
 - physical capital: net PP&E; flow: capex.
-- knowledge capital: R&D accumulated at 15 percent depreciation, opening stock from the
-  first observed year. With four years that opening stock dominates; the output says so.
-- brand capital: a share of SG&A (30 percent, `--brand-share`) at 50 percent depreciation.
-  Yahoo has no advertising line.
-- labor: the latest headcount carried across all years. yfinance has no history, so hiring
-  equals replacement of separations and the labor share is rough.
+- knowledge capital: R&D accumulated at 15 percent depreciation, with the opening stock
+  backed out of the first observed year. With only four years that opening stock dominates,
+  and the output says so.
+- brand capital: a share of SG&A (30 percent by default, `--brand-share`) at 50 percent
+  depreciation. Yahoo doesn't publish an advertising line, so this is a proxy.
+- labor: the latest headcount, carried across all years because yfinance has no headcount
+  history. Hiring then equals replacement of separations, and the labor share should be
+  read as rough.
 - market value: year-end price × shares + debt, `--net-of-cash` optional.
 - tax: US statutory schedule unless `--tax-rate`, with a note for non-US filers.
 
-A few years of one firm can't identify four parameters, so `live` applies parameters: a file
-from `estimate`, or an illustrative calibration it labels as such. Observed and implied
-valuation ratios print side by side. For SAP they're close; for Nvidia they're a factor of
-seven apart, which is the calibration failing, not the model.
+Four years of one firm can't identify four parameters, so `live` doesn't try. It applies a
+parameter file from `estimate` if you give it one, otherwise an illustrative calibration
+that it labels as such in the output. Observed and implied valuation ratios are printed next
+to each other on purpose. For SAP they are close. For Nvidia they are a factor of seven
+apart, which tells you the illustrative parameters are nowhere near pricing Nvidia, not that
+the identity is wrong.
 
-marketlens is the optional extra `firmvalue[live]`, pinned to tag `v0.3.1` in
-`[tool.uv.sources]`. firmvalue types against its `Statements` record structurally, so the test
-suite needs neither the package nor the network.
+marketlens is an optional extra, `firmvalue[live]`, pinned to tag `v0.3.1` in
+`[tool.uv.sources]`. firmvalue only depends on the shape of its `Statements` record (a
+`Protocol`), so the tests run without marketlens installed and without network access.
 
 ## Compustat
 
@@ -177,7 +183,8 @@ Installs:
   estimator and the simulator against the model as written and the tests that pin it.
 - A session-start hook that lists the tools.
 
-The plugin uses marketlens as a library, not as a plugin. Install either, both or neither.
+The plugin uses marketlens as a library, not as a plugin, so you don't need the marketlens
+plugin installed for this one to work.
 
 ## Layout
 
@@ -194,7 +201,7 @@ src/firmvalue/
   cli.py          Typer                    mcp_server.py  same functions as the CLI
 ```
 
-Conventions, since they bite otherwise:
+Things to know before changing code:
 
 - Panels hold end-of-year stocks and the year's flows. The investment rate uses the opening
   stock recovered from the law of motion, `(X_end - I) / (1 - δ)`.
@@ -213,22 +220,25 @@ uv run ruff check . && uv run ruff format --check . && uv run mypy
 uv run python scripts/validate_plugin.py --with-claude-cli
 ```
 
-ruff, line length 100. mypy strict. pytest treats warnings as errors. CI runs on 3.12 and 3.13
-without the live extra, then runs the demo. Every formula has a test with a value worked out
-by hand, and two Monte Carlo tests check that estimation on a simulated panel returns the
-design's parameters (exactly without noise, within sampling error with noise).
-`.claude/settings.json` has two hooks for people working on this in Claude Code: ruff after
-every edit, and a block on `git push --force`, `--no-verify` and `git reset --hard`.
+ruff with line length 100, mypy strict, pytest with warnings turned into errors. CI runs on
+3.12 and 3.13 without the live extra and then runs the demo. Each formula has a test with a
+value worked out by hand. Two Monte Carlo tests simulate a panel and check that estimation
+gives back the parameters it was generated with: exactly when there is no valuation noise,
+within sampling error when there is. `.claude/settings.json` has two hooks for anyone working
+on this in Claude Code, ruff after every edit and a block on `git push --force`,
+`--no-verify` and `git reset --hard`.
 
-Design notes and the alternatives I didn't take: `docs/design.md`.
+Design notes, including approaches I considered and dropped, are in `docs/design.md`.
 
 ## Known gaps
 
-Depreciation rates (10 / 10 / 15 / 50 percent) are conventions, not estimates. No tax
-depreciation allowances, so the price of capital is exactly 1. Shares are equal-weighted
-across firms unless you ask for value weights. No skill classification of industries; you
-bring your own. Live mode's brand capital is an SG&A share and its headcount is one number.
-The illustrative parameters price SAP and misprice Nvidia; estimate your own.
+The depreciation rates (10 / 10 / 15 / 50 percent) are the usual conventions, not estimates.
+Tax depreciation allowances are ignored, so the price of physical capital is exactly 1.
+Shares are equal-weighted across firms unless you ask for value weights. There is no
+industry skill classification built in; if you want the paper's low/high-skill split you
+have to supply it. In live mode brand capital is an SG&A share and headcount is a single
+number. The illustrative parameters happen to price SAP reasonably and Nvidia badly, so for
+anything serious, estimate your own on a panel.
 
 ## Reference
 
