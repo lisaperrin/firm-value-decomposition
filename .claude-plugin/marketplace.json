@@ -1,0 +1,16 @@
+{
+  "name": "firmvalue-marketplace",
+  "description": "Self-hosted marketplace for the firmvalue plugin.",
+  "owner": {
+    "name": "Lisa Perrin"
+  },
+  "plugins": [
+    {
+      "name": "firmvalue",
+      "source": "./",
+      "description": "Decompose firm value into physical, labor, knowledge and brand capital.",
+      "category": "productivity",
+      "tags": ["finance", "research", "valuation"]
+    }
+  ]
+}

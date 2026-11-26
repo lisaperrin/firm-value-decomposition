@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "firmvalue": {
+      "command": "uvx",
+      "args": ["--from", "${CLAUDE_PLUGIN_ROOT}", "firmvalue-mcp"]
+    }
+  }
+}

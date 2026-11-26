@@ -1,0 +1,12 @@
+{
+  "name": "firmvalue",
+  "version": "0.1.0",
+  "description": "Structural decomposition of firm value for Claude Code: estimate adjustment cost parameters on a firm-year panel and split market value into physical capital, labor, knowledge capital and brand capital through an MCP server.",
+  "author": {
+    "name": "Lisa Perrin"
+  },
+  "homepage": "https://github.com/lisaperrin/firm-value-decomposition",
+  "repository": "https://github.com/lisaperrin/firm-value-decomposition",
+  "license": "MIT",
+  "keywords": ["corporate-finance", "intangible-capital", "structural-estimation", "mcp"]
+}
