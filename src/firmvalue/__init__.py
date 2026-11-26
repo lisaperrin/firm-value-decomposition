@@ -1,21 +1,27 @@
 """Structural decomposition of firm value into four productive inputs."""
 
 from firmvalue.capital import perpetual_inventory, perpetual_inventory_by_firm
+from firmvalue.errors import FirmValueError, PanelError, ParametersError
 from firmvalue.estimation import EstimationResult, FitStatistics, estimate, estimate_by_group
 from firmvalue.inputs import DEFAULT_SPECS, INPUTS, Input, InputSpec
 from firmvalue.model import AdjustmentCost, Parameters, decompose, implied_value, shadow_values
 from firmvalue.panel import validate_panel
 from firmvalue.simulate import SimulationDesign, simulate_panel
 
+__version__ = "0.1.0"
+
 __all__ = [
     "DEFAULT_SPECS",
     "INPUTS",
     "AdjustmentCost",
     "EstimationResult",
+    "FirmValueError",
     "FitStatistics",
     "Input",
     "InputSpec",
+    "PanelError",
     "Parameters",
+    "ParametersError",
     "SimulationDesign",
     "decompose",
     "estimate",

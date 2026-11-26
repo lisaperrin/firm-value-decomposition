@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pandas as pd
 
+from firmvalue.errors import PanelError
 from firmvalue.inputs import FLOW_COLUMN, INPUTS, Input
 
 ID_COLUMNS: tuple[str, ...] = ("firm", "year")
@@ -18,6 +19,8 @@ REQUIRED_COLUMNS: tuple[str, ...] = (
 )
 OPTIONAL_COLUMNS: tuple[str, ...] = ("group",)
 
+__all__ = ["PanelError", "validate_panel"]
+
 
 def stock_column(name: Input) -> str:
     """Column holding the end-of-year installed stock of ``name``."""
@@ -27,10 +30,6 @@ def stock_column(name: Input) -> str:
 def flow_column(name: Input) -> str:
     """Column holding the within-year expenditure (or hiring) flow of ``name``."""
     return FLOW_COLUMN[name]
-
-
-class PanelError(ValueError):
-    """The panel violates the schema."""
 
 
 def validate_panel(frame: pd.DataFrame) -> pd.DataFrame:

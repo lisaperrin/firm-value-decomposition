@@ -3,6 +3,7 @@ import json
 import pandas as pd
 from typer.testing import CliRunner
 
+from firmvalue import __version__
 from firmvalue.cli import app
 
 runner = CliRunner()
@@ -30,6 +31,42 @@ def test_pipeline_commands(tmp_path):
         runner.invoke(app, ["figure", str(panel), str(params), "--out", str(figure)]).exit_code == 0
     )
     assert figure.stat().st_size > 0
+
+
+def test_json_mode_prints_machine_readable_output(tmp_path):
+    panel = tmp_path / "panel.csv"
+    params = tmp_path / "parameters.json"
+    result = runner.invoke(app, ["--json", "simulate", "--out", str(panel), "--firms", "20"])
+    assert result.exit_code == 0, result.output
+    summary = json.loads(result.output)
+    assert summary["firms"] == 40
+    assert summary["years"] == [1975, 2015]
+
+    result = runner.invoke(app, ["--json", "estimate", str(panel), "--out", str(params)])
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.output) == json.loads(params.read_text())
+
+    result = runner.invoke(app, ["--json", "shares", str(panel), str(params)])
+    assert result.exit_code == 0, result.output
+    rows = json.loads(result.output)["shares"]
+    assert len(rows) == 12
+
+
+def test_errors_exit_one_with_one_line(tmp_path):
+    result = runner.invoke(app, ["estimate", str(tmp_path / "missing.csv")])
+    assert result.exit_code == 1
+    assert "error: panel file not found" in result.output
+    bad = tmp_path / "bad.csv"
+    bad.write_text("firm,year\na,2000\n")
+    result = runner.invoke(app, ["estimate", str(bad)])
+    assert result.exit_code == 1
+    assert "missing required columns" in result.output
+
+
+def test_version_flag():
+    result = runner.invoke(app, ["--version"])
+    assert result.exit_code == 0
+    assert __version__ in result.output
 
 
 def test_demo_writes_report(tmp_path):
@@ -68,3 +105,6 @@ def test_prepare_from_compustat(tmp_path):
     result = runner.invoke(app, ["prepare", str(funda), "--out", str(out)])
     assert result.exit_code == 0, result.output
     assert len(pd.read_csv(out)) == 10
+    result = runner.invoke(app, ["prepare", str(tmp_path / "nope.csv")])
+    assert result.exit_code == 1
+    assert "not found" in result.output

@@ -1,60 +1,95 @@
-"""Command-line interface."""
+"""Command-line interface. Run ``firmvalue --help``."""
 
 from __future__ import annotations
 
+import functools
 import json
+from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 
 import pandas as pd
 import typer
 
+from firmvalue import __version__
 from firmvalue.compustat import from_compustat
+from firmvalue.errors import FirmValueError, InputFileError
 from firmvalue.estimation import EstimationResult, estimate_by_group
-from firmvalue.inputs import INPUTS
-from firmvalue.model import Parameters, decompose
-from firmvalue.panel import validate_panel
+from firmvalue.io import (
+    decompose_by_group,
+    markdown_table,
+    read_panel,
+    read_parameters,
+    results_to_dict,
+    share_table,
+    write_parameters,
+)
 from firmvalue.plotting import plot_share_panels
 from firmvalue.reference import CITATION, GROUPS, published_shares
 from firmvalue.simulate import SimulationDesign, simulate_panel
 
 app = typer.Typer(
+    name="firmvalue",
     help="Decompose firm value into physical, labor, knowledge and brand capital.",
     no_args_is_help=True,
     add_completion=False,
 )
 
 
-def _read_panel(path: Path) -> pd.DataFrame:
-    return validate_panel(pd.read_csv(path))
+@dataclass
+class State:
+    """Global options shared by every command."""
+
+    as_json: bool = False
 
 
-def _write_parameters(results: dict[str, EstimationResult], path: Path) -> None:
-    payload = {
-        group: {
-            "parameters": result.params.to_dict(),
-            "standard_errors": dict(result.standard_errors),
-            "fit": result.fit.to_dict(),
-            "converged": result.converged,
-        }
-        for group, result in results.items()
+state = State()
+
+
+def _version(value: bool) -> None:
+    if value:
+        typer.echo(f"firmvalue {__version__}")
+        raise typer.Exit()
+
+
+@app.callback()
+def main(
+    as_json: Annotated[
+        bool, typer.Option("--json", help="Print machine-readable JSON instead of tables.")
+    ] = False,
+    _: Annotated[
+        bool | None,
+        typer.Option("--version", callback=_version, is_eager=True, help="Show the version."),
+    ] = None,
+) -> None:
+    """Structural decomposition of firm value."""
+    state.as_json = as_json
+
+
+def _handle_errors[**P, R](func: Callable[P, R]) -> Callable[P, R]:
+    @functools.wraps(func)
+    def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
+        try:
+            return func(*args, **kwargs)
+        except FirmValueError as exc:
+            typer.echo(f"error: {exc}", err=True)
+            raise typer.Exit(code=1) from exc
+
+    return wrapper
+
+
+def _emit(payload: dict[str, Any], text: str) -> None:
+    typer.echo(json.dumps(payload, indent=2) if state.as_json else text)
+
+
+def _panel_summary(panel: pd.DataFrame, path: Path) -> dict[str, Any]:
+    return {
+        "path": str(path),
+        "firm_years": len(panel),
+        "firms": int(panel["firm"].nunique()),
+        "years": [int(panel["year"].min()), int(panel["year"].max())],
     }
-    path.write_text(json.dumps(payload, indent=2) + "\n")
-
-
-def _read_parameters(path: Path) -> dict[str, Parameters]:
-    payload = json.loads(path.read_text())
-    return {group: Parameters.from_dict(entry["parameters"]) for group, entry in payload.items()}
-
-
-def _decompose_by_group(panel: pd.DataFrame, params: dict[str, Parameters]) -> pd.DataFrame:
-    pieces = []
-    for label, frame in panel.groupby("group", sort=True):
-        key = str(label) if str(label) in params else "all"
-        if key not in params:
-            raise typer.BadParameter(f"no parameters for group {label!r} and no 'all' fallback")
-        pieces.append(decompose(frame, params[key]))
-    return pd.concat(pieces, ignore_index=True)
 
 
 def _panels(decomposition: pd.DataFrame) -> list[tuple[str, pd.DataFrame]]:
@@ -69,92 +104,79 @@ def _group_order(label: str) -> tuple[int, str]:
     return (GROUPS.index(label) if label in GROUPS else len(GROUPS), label)
 
 
-def _share_table(decomposition: pd.DataFrame) -> pd.DataFrame:
-    rows = []
-    groups = [("all", decomposition)] + [
-        (str(k), g) for k, g in decomposition.groupby("group", sort=True)
-    ]
-    for label, frame in groups:
-        for name in INPUTS:
-            rows.append(
-                {
-                    "group": label,
-                    "input": str(name),
-                    "book": 100.0 * frame[f"book_share_{name}"].mean(),
-                    "market": 100.0 * frame[f"share_{name}"].mean(),
-                }
-            )
-    return pd.DataFrame(rows)
-
-
-def _markdown(frame: pd.DataFrame, digits: int = 2) -> str:
-    header = "| " + " | ".join(frame.columns) + " |"
-    rule = "|" + "|".join("---" for _ in frame.columns) + "|"
-    body = [
-        "| " + " | ".join(f"{v:.{digits}f}" if isinstance(v, float) else str(v) for v in row) + " |"
-        for row in frame.itertuples(index=False)
-    ]
-    return "\n".join([header, rule, *body]) + "\n"
+def _estimation_text(results: dict[str, EstimationResult]) -> str:
+    summary = pd.concat([r.summary() for r in results.values()], ignore_index=True)
+    lines = [markdown_table(summary, digits=3)]
+    for group, result in results.items():
+        fit = result.fit
+        lines.append(
+            f"{group}: pooled R2 {fit.pooled_r2:.3f}, time-series R2 {fit.time_series_r2:.3f}, "
+            f"cross-section R2 {fit.cross_section_r2:.3f}"
+        )
+    return "\n".join(lines)
 
 
 @app.command()
+@_handle_errors
 def simulate(
     out: Annotated[Path, typer.Option(help="Destination CSV.")] = Path("panel.csv"),
-    firms: Annotated[int, typer.Option(help="Firms per group.")] = 400,
+    firms: Annotated[int, typer.Option(min=1, help="Firms per group.")] = 400,
     seed: Annotated[int, typer.Option(help="Random seed.")] = 0,
 ) -> None:
     """Draw a synthetic firm-year panel from the demonstration design."""
     panel = simulate_panel(SimulationDesign.demo(firms), seed=seed)
     panel.to_csv(out, index=False)
-    typer.echo(f"wrote {len(panel)} firm-years to {out}")
+    _emit(_panel_summary(panel, out), f"wrote {len(panel)} firm-years to {out}")
 
 
 @app.command()
+@_handle_errors
 def prepare(
     funda: Annotated[Path, typer.Argument(help="Compustat Fundamentals Annual CSV.")],
     out: Annotated[Path, typer.Option(help="Destination CSV.")] = Path("panel.csv"),
     net_of_cash: Annotated[bool, typer.Option(help="Subtract cash from market value.")] = False,
 ) -> None:
     """Convert a Compustat extract into the estimation panel."""
-    panel = from_compustat(pd.read_csv(funda), net_of_cash=net_of_cash)
+    if not funda.is_file():
+        raise InputFileError(f"fundamentals file not found: {funda}")
+    try:
+        panel = from_compustat(pd.read_csv(funda), net_of_cash=net_of_cash)
+    except ValueError as exc:
+        raise InputFileError(str(exc)) from exc
     panel.to_csv(out, index=False)
-    typer.echo(f"wrote {len(panel)} firm-years to {out}")
+    _emit(_panel_summary(panel, out), f"wrote {len(panel)} firm-years to {out}")
 
 
 @app.command()
+@_handle_errors
 def estimate(
     panel: Annotated[Path, typer.Argument(help="Panel CSV.")],
     out: Annotated[Path, typer.Option(help="Destination JSON.")] = Path("parameters.json"),
     curvature: Annotated[bool, typer.Option(help="Estimate cost curvature too.")] = False,
 ) -> None:
     """Estimate adjustment cost parameters, pooled and by group."""
-    results = estimate_by_group(_read_panel(panel), estimate_curvature=curvature)
-    _write_parameters(results, out)
-    summary = pd.concat([r.summary() for r in results.values()], ignore_index=True)
-    typer.echo(_markdown(summary, digits=3))
-    for group, result in results.items():
-        fit = result.fit
-        typer.echo(
-            f"{group}: pooled R2 {fit.pooled_r2:.3f}, time-series R2 {fit.time_series_r2:.3f}, "
-            f"cross-section R2 {fit.cross_section_r2:.3f}"
-        )
-    typer.echo(f"wrote {out}")
+    results = estimate_by_group(read_panel(panel), estimate_curvature=curvature)
+    write_parameters(results, out)
+    _emit(results_to_dict(results), _estimation_text(results) + f"\nwrote {out}")
 
 
 @app.command()
+@_handle_errors
 def shares(
     panel: Annotated[Path, typer.Argument(help="Panel CSV.")],
     parameters: Annotated[Path, typer.Argument(help="Parameters JSON from `estimate`.")],
     out: Annotated[Path | None, typer.Option(help="Firm-year decomposition CSV.")] = None,
 ) -> None:
     """Decompose firm value and report average book and market value shares."""
-    decomposition = _decompose_by_group(_read_panel(panel), _read_parameters(parameters))
+    decomposition = decompose_by_group(read_panel(panel), read_parameters(parameters))
     if out is not None:
         decomposition.to_csv(out, index=False)
-    typer.echo(_markdown(_share_table(decomposition)))
+    table = share_table(decomposition)
+    _emit({"shares": table.to_dict(orient="records"), "units": "percent"}, markdown_table(table))
 
 
 @app.command()
+@_handle_errors
 def figure(
     panel: Annotated[Path, typer.Argument(help="Panel CSV.")],
     parameters: Annotated[Path, typer.Argument(help="Parameters JSON from `estimate`.")],
@@ -162,16 +184,17 @@ def figure(
     weighted: Annotated[bool, typer.Option(help="Value-weight the annual shares.")] = False,
 ) -> None:
     """Plot the history of value shares, one panel per group."""
-    decomposition = _decompose_by_group(_read_panel(panel), _read_parameters(parameters))
+    decomposition = decompose_by_group(read_panel(panel), read_parameters(parameters))
     fig = plot_share_panels(_panels(decomposition), weighted=weighted)
     fig.savefig(out, dpi=200, bbox_inches="tight")
-    typer.echo(f"wrote {out}")
+    _emit({"path": str(out)}, f"wrote {out}")
 
 
 @app.command()
+@_handle_errors
 def demo(
     out_dir: Annotated[Path, typer.Option(help="Output directory.")] = Path("outputs"),
-    firms: Annotated[int, typer.Option(help="Firms per group.")] = 400,
+    firms: Annotated[int, typer.Option(min=1, help="Firms per group.")] = 400,
     seed: Annotated[int, typer.Option(help="Random seed.")] = 0,
 ) -> None:
     """Simulate, estimate, decompose and plot in one run."""
@@ -180,12 +203,12 @@ def demo(
     panel.to_csv(out_dir / "panel.csv", index=False)
 
     results = estimate_by_group(panel)
-    _write_parameters(results, out_dir / "parameters.json")
+    write_parameters(results, out_dir / "parameters.json")
     params = {group: result.params for group, result in results.items()}
-    decomposition = _decompose_by_group(panel, params)
+    decomposition = decompose_by_group(panel, params)
     decomposition.to_csv(out_dir / "decomposition.csv", index=False)
 
-    estimated = _share_table(decomposition)
+    estimated = share_table(decomposition)
     published = published_shares().rename(
         columns={"book": "book_published", "market": "market_published"}
     )
@@ -204,22 +227,26 @@ def demo(
             "",
             "## Adjustment cost estimates",
             "",
-            _markdown(summary, digits=3),
+            markdown_table(summary, digits=3),
             "## Fit of the valuation ratio",
             "",
-            _markdown(fits, digits=3),
+            markdown_table(fits, digits=3),
             "## Average value shares (percent)",
             "",
             "Published columns are from Tables 2 and 4 of the reference below.",
             "",
-            _markdown(comparison),
+            markdown_table(comparison),
             f"Reference: {CITATION}",
             "",
         ]
     )
     (out_dir / "report.md").write_text(report)
-
-    figure = plot_share_panels(_panels(decomposition))
-    figure.savefig(out_dir / "shares.png", dpi=200, bbox_inches="tight")
-    typer.echo(report)
-    typer.echo(f"wrote outputs to {out_dir}")
+    plot_share_panels(_panels(decomposition)).savefig(
+        out_dir / "shares.png", dpi=200, bbox_inches="tight"
+    )
+    payload = {
+        "out_dir": str(out_dir),
+        "estimation": results_to_dict(results),
+        "shares": comparison.to_dict(orient="records"),
+    }
+    _emit(payload, report + f"wrote outputs to {out_dir}")
