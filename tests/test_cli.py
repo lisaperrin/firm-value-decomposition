@@ -24,7 +24,8 @@ def test_pipeline_commands(tmp_path):
 
     result = runner.invoke(app, ["shares", str(panel), str(params), "--out", str(decomposition)])
     assert result.exit_code == 0
-    assert "| group | input | book | market |" in result.output
+    assert "Average value shares" in result.output
+    assert "physical" in result.output
     frame = pd.read_csv(decomposition)
     assert {"share_physical", "share_labor", "share_knowledge", "share_brand"} <= set(frame)
 
@@ -115,9 +116,9 @@ def test_live_command(monkeypatch, tmp_path):
     monkeypatch.setattr(live, "statements_source", lambda s, y: (make_records(s, y), 30_000))
     result = runner.invoke(app, ["live", "ACME", "BETA", "--years", "3"])
     assert result.exit_code == 0, result.output
-    assert "ACME fiscal 2025" in result.output
-    assert "BETA fiscal 2025" in result.output
-    assert "| input | stock | q | book share | market share |" in result.output
+    assert "ACME  fiscal 2025" in result.output
+    assert "BETA  fiscal 2025" in result.output
+    assert "market %" in result.output
     assert "illustrative" in result.output
 
     panel_out = tmp_path / "live.csv"

@@ -11,12 +11,13 @@ from typing import Annotated, Any
 
 import pandas as pd
 import typer
+from rich.console import Console, RenderableType
+from rich.text import Text
 
 from firmvalue import __version__
 from firmvalue.compustat import from_compustat
 from firmvalue.errors import FirmValueError, InputFileError
-from firmvalue.estimation import EstimationResult, estimate_by_group
-from firmvalue.inputs import INPUTS
+from firmvalue.estimation import estimate_by_group
 from firmvalue.io import (
     decompose_by_group,
     markdown_table,
@@ -26,10 +27,11 @@ from firmvalue.io import (
     share_table,
     write_parameters,
 )
-from firmvalue.live import LiveDecomposition, LiveOptions, fetch_and_decompose
+from firmvalue.live import LiveOptions, fetch_and_decompose
 from firmvalue.model import Parameters
 from firmvalue.plotting import plot_share_panels
 from firmvalue.reference import CITATION, GROUPS, published_shares
+from firmvalue.report import estimation_view, live_view, shares_view
 from firmvalue.simulate import SimulationDesign, simulate_panel
 
 app = typer.Typer(
@@ -38,6 +40,8 @@ app = typer.Typer(
     no_args_is_help=True,
     add_completion=False,
 )
+console = Console()
+error_console = Console(stderr=True)
 
 
 @dataclass
@@ -52,7 +56,7 @@ state = State()
 
 def _version(value: bool) -> None:
     if value:
-        typer.echo(f"firmvalue {__version__}")
+        console.print(f"firmvalue {__version__}")
         raise typer.Exit()
 
 
@@ -76,14 +80,18 @@ def _handle_errors[**P, R](func: Callable[P, R]) -> Callable[P, R]:
         try:
             return func(*args, **kwargs)
         except FirmValueError as exc:
-            typer.echo(f"error: {exc}", err=True)
+            error_console.print(Text(f"error: {exc}"))
             raise typer.Exit(code=1) from exc
 
     return wrapper
 
 
-def _emit(payload: dict[str, Any], text: str) -> None:
-    typer.echo(json.dumps(payload, indent=2) if state.as_json else text)
+def _emit(payload: dict[str, Any], *renderables: RenderableType | str) -> None:
+    if state.as_json:
+        typer.echo(json.dumps(payload, indent=2))
+        return
+    for item in renderables:
+        console.print(Text(item) if isinstance(item, str) else item)
 
 
 def _panel_summary(panel: pd.DataFrame, path: Path) -> dict[str, Any]:
@@ -105,18 +113,6 @@ def _panels(decomposition: pd.DataFrame) -> list[tuple[str, pd.DataFrame]]:
 
 def _group_order(label: str) -> tuple[int, str]:
     return (GROUPS.index(label) if label in GROUPS else len(GROUPS), label)
-
-
-def _estimation_text(results: dict[str, EstimationResult]) -> str:
-    summary = pd.concat([r.summary() for r in results.values()], ignore_index=True)
-    lines = [markdown_table(summary, digits=3)]
-    for group, result in results.items():
-        fit = result.fit
-        lines.append(
-            f"{group}: pooled R2 {fit.pooled_r2:.3f}, time-series R2 {fit.time_series_r2:.3f}, "
-            f"cross-section R2 {fit.cross_section_r2:.3f}"
-        )
-    return "\n".join(lines)
 
 
 @app.command()
@@ -160,7 +156,7 @@ def estimate(
     """Estimate adjustment cost parameters, pooled and by group."""
     results = estimate_by_group(read_panel(panel), estimate_curvature=curvature)
     write_parameters(results, out)
-    _emit(results_to_dict(results), _estimation_text(results) + f"\nwrote {out}")
+    _emit(results_to_dict(results), estimation_view(results), f"wrote {out}")
 
 
 @app.command()
@@ -175,7 +171,7 @@ def shares(
     if out is not None:
         decomposition.to_csv(out, index=False)
     table = share_table(decomposition)
-    _emit({"shares": table.to_dict(orient="records"), "units": "percent"}, markdown_table(table))
+    _emit({"shares": table.to_dict(orient="records"), "units": "percent"}, shares_view(table))
 
 
 @app.command()
@@ -191,34 +187,6 @@ def figure(
     fig = plot_share_panels(_panels(decomposition), weighted=weighted)
     fig.savefig(out, dpi=200, bbox_inches="tight")
     _emit({"path": str(out)}, f"wrote {out}")
-
-
-def _live_text(result: LiveDecomposition) -> str:
-    latest = result.latest
-    rows = pd.DataFrame(
-        [
-            {
-                "input": str(name),
-                "stock": float(latest[f"{name}"]),
-                "q": float(latest[f"q_{name}"]),
-                "book share": 100.0 * float(latest[f"book_share_{name}"]),
-                "market share": 100.0 * float(latest[f"share_{name}"]),
-            }
-            for name in INPUTS
-        ]
-    )
-    lines = [
-        f"{result.symbol} fiscal {int(latest['year'])}, millions of {result.currency}, "
-        f"employees in thousands",
-        f"observed value {latest['observed_value']:,.0f}, implied {latest['implied_value']:,.0f}, "
-        f"book {latest['book_value']:,.0f} "
-        f"(ratios {latest['observed_ratio']:.2f} observed, {latest['implied_ratio']:.2f} implied)",
-        "",
-        markdown_table(rows),
-        f"parameters: {result.parameters_source}",
-        *(f"note: {note}" for note in result.notes),
-    ]
-    return "\n".join(lines)
 
 
 @app.command()
@@ -256,10 +224,12 @@ def live(
         pd.concat([r.by_year.assign(symbol=r.symbol) for r in results]).to_csv(
             panel_out, index=False
         )
-    _emit(
-        {"results": [r.to_dict() for r in results]},
-        "\n\n".join(_live_text(r) for r in results),
-    )
+    views: list[RenderableType | str] = []
+    for result in results:
+        if views:
+            views.append("")
+        views.append(live_view(result))
+    _emit({"results": [r.to_dict() for r in results]}, *views)
 
 
 @app.command()
@@ -321,4 +291,9 @@ def demo(
         "estimation": results_to_dict(results),
         "shares": comparison.to_dict(orient="records"),
     }
-    _emit(payload, report + f"wrote outputs to {out_dir}")
+    _emit(
+        payload,
+        estimation_view(results),
+        shares_view(comparison, "Average value shares, percent (paper: Tables 2 and 4)"),
+        f"wrote panel, parameters, decomposition, report.md and shares.png to {out_dir}",
+    )
