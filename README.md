@@ -1,5 +1,10 @@
 # firmvalue
 
+[![CI](https://github.com/lisaperrin/firm-value-decomposition/actions/workflows/ci.yml/badge.svg)](https://github.com/lisaperrin/firm-value-decomposition/actions/workflows/ci.yml)
+![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue)
+![License: MIT](https://img.shields.io/badge/license-MIT-green)
+![Claude Code plugin](https://img.shields.io/badge/Claude%20Code-plugin-8A2BE2)
+
 Structural decomposition of a firm's market value into the contributions of
 four productive inputs: physical capital, the installed labor force, knowledge
 capital and brand capital. The package implements the production-function
@@ -26,6 +31,8 @@ this package expects so that the same pipeline runs on real data.
   the firm-year, portfolio and aggregate time-series level.
 - Decomposes firm value into input values and shares, and plots their history.
 - Simulates panels from the model for Monte Carlo checks of the estimator.
+- Exposes all of it as a typed library, a CLI with `--json` output, a Model
+  Context Protocol server and a Claude Code plugin that share one code path.
 
 ## The model
 
@@ -103,6 +110,9 @@ uv run firmvalue shares panel.csv parameters.json --out decomposition.csv
 uv run firmvalue figure panel.csv parameters.json --out shares.png
 ```
 
+Add `--json` before any command for machine-readable output, identical to what
+the MCP tools return. Errors exit with status 1 and one line on stderr.
+
 From Python:
 
 ```python
@@ -116,6 +126,30 @@ print(low.fit)
 shares = decompose(panel[panel["group"] == "low_skill"], low.params)
 print(shares.filter(like="share_").mean())
 ```
+
+## Use it from Claude Code
+
+The repository is itself a Claude Code plugin. Install it in one step:
+
+```text
+/plugin install firmvalue --marketplace lisaperrin/firm-value-decomposition
+```
+
+The MCP server is launched with `uvx` from the installed plugin folder, so
+[uv](https://docs.astral.sh/uv/) must be on your PATH. The first launch builds
+the server's environment and can take a minute; later launches are instant.
+
+| Component | Name | What it does |
+|-----------|------|--------------|
+| MCP server | `firmvalue` | Tools `estimate_parameters`, `value_shares`, `decompose_firm`, `simulate_demo_panel`, `published_value_shares`. |
+| Skill | `/firmvalue:estimate panel.csv` | Fits the model to a panel and reports estimates, standard errors and fit. |
+| Skill | `/firmvalue:decompose ...` | Shares for a panel, or for one firm-year from its stocks and flows. |
+| Skill | `/firmvalue:explain-model [topic]` | Walks through the model from the repository's own sources. |
+| Agent | `structural-reviewer` | Checks shadow-value algebra, the value identity, the estimator and the simulator against the stated model and the tests. |
+| Hook | `SessionStart` | Announces the tools so Claude reaches for them instead of computing shares by hand. |
+
+Ask naturally: *"what share of this firm's value is its workforce, given these
+stocks and flows?"* and Claude will call `decompose_firm` instead of guessing.
 
 ## Demonstration results
 
@@ -192,31 +226,42 @@ separately as well as pooled.
 
 ## Project layout
 
-```
+```text
 src/firmvalue/
-  inputs.py      the four inputs, depreciation and tax treatment
-  capital.py     perpetual inventory
-  tax.py         statutory corporate tax rates
-  panel.py       panel schema and validation
-  model.py       adjustment costs, shadow values, value identity, decomposition
-  estimation.py  nonlinear least squares, clustered standard errors, fit
-  simulate.py    synthetic panels from the model
-  compustat.py   Compustat adapter
-  plotting.py    stacked-area share histories
-  reference.py   published shares from the paper
-  cli.py         command-line interface
-tests/           unit tests and Monte Carlo recovery tests
-docs/design.md   design notes and alternatives considered
+  inputs.py       the four inputs, depreciation and tax treatment
+  capital.py      perpetual inventory
+  tax.py          statutory corporate tax rates
+  panel.py        panel schema and validation
+  model.py        adjustment costs, shadow values, value identity, decomposition
+  estimation.py   nonlinear least squares, clustered standard errors, fit
+  simulate.py     synthetic panels from the model
+  compustat.py    Compustat adapter
+  plotting.py     stacked-area share histories
+  reference.py    published shares from the paper
+  io.py           panel and parameter files, share tables, Markdown rendering
+  errors.py       FirmValueError and friends
+  cli.py          Typer command-line interface
+  mcp_server.py   MCP stdio server exposing the same operations as tools
+
+.claude-plugin/   plugin.json and marketplace.json     skills/  agents/  hooks/   plugin components
+.mcp.json         MCP server launch config             .claude/ project hooks and permissions
+tests/            unit tests, Monte Carlo recovery tests, MCP, plugin and hook tests
+docs/design.md    design notes and alternatives considered
 ```
 
 ## Development
 
 ```bash
 uv sync --all-groups
-uv run pytest --cov=firmvalue
-uv run ruff check . && uv run ruff format --check .
-uv run mypy src
+uv run pytest -q                      # whole suite, no network, a few seconds
+uv run ruff check . && uv run ruff format --check . && uv run mypy
+uv run python scripts/validate_plugin.py --with-claude-cli
 ```
+
+Contributors working in Claude Code get two project hooks from `.claude/settings.json`:
+every edited Python file is formatted with ruff, and `git push --force`, `--no-verify`
+and `git reset --hard` are refused. CI runs lint, types, tests, the plugin validator and
+the demonstration on Python 3.12 and 3.13.
 
 ## Reference
 

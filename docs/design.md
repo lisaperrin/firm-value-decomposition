@@ -69,6 +69,17 @@ from the intended composition over four decades; additive shocks keep the
 cross-sectional composition stable while leaving enough rate variation to
 identify the parameters.
 
+**Claude Code integration.** The repository doubles as a Claude Code plugin,
+the pattern used by the author's MarketLens project: an MCP server over the
+same functions the CLI calls, three skills, one reviewer agent and a session
+hook. Two parts of that pattern were deliberately not copied. A data-provider
+protocol with a cache has no job here, since the inputs are a panel file
+estimated once rather than live queries, and a prompt hook detecting ticker
+symbols has nothing to detect. The reviewer agent is the part that fits best:
+the risk in this project is wrong economics, and `structural-reviewer` checks
+the first-order-condition algebra, the value identity and the Monte Carlo
+tests the way MarketLens' `quant-reviewer` checks indicator maths.
+
 ## Decisions left to users
 
 - Depreciation and separation rates (`InputSpec`).
