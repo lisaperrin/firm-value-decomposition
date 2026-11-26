@@ -707,7 +707,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "marketlens", marker = "extra == 'live'", git = "https://github.com/lisaperrin/marketlens?rev=cccfb02524b2d924f70e5ac22d0ff4639b5237f3" },
+    { name = "marketlens", marker = "extra == 'live'", git = "https://github.com/lisaperrin/marketlens?rev=c69adf3f8239e0c445ffe146d52801e95b9961b2" },
     { name = "matplotlib", specifier = ">=3.9" },
     { name = "mcp", specifier = ">=2.0" },
     { name = "numpy", specifier = ">=2.0" },
@@ -1221,7 +1221,7 @@ wheels = [
 [[package]]
 name = "marketlens"
 version = "0.3.0"
-source = { git = "https://github.com/lisaperrin/marketlens?rev=cccfb02524b2d924f70e5ac22d0ff4639b5237f3#cccfb02524b2d924f70e5ac22d0ff4639b5237f3" }
+source = { git = "https://github.com/lisaperrin/marketlens?rev=c69adf3f8239e0c445ffe146d52801e95b9961b2#c69adf3f8239e0c445ffe146d52801e95b9961b2" }
 dependencies = [
     { name = "mcp" },
     { name = "pandas" },

@@ -75,7 +75,7 @@ warn_unreachable = true
 files = ["src"]
 
 [[tool.mypy.overrides]]
-module = ["matplotlib.*", "scipy.*", "marketlens.*"]
+module = ["matplotlib.*", "scipy.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
@@ -88,4 +88,4 @@ source = ["firmvalue"]
 branch = true
 
 [tool.uv.sources]
-marketlens = { git = "https://github.com/lisaperrin/marketlens", rev = "cccfb02524b2d924f70e5ac22d0ff4639b5237f3" }
+marketlens = { git = "https://github.com/lisaperrin/marketlens", rev = "c69adf3f8239e0c445ffe146d52801e95b9961b2" }
