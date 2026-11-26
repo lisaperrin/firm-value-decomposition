@@ -357,7 +357,25 @@ def _marketlens_source(symbol: str, years: int) -> tuple[list[StatementLike], in
         employees = provider.get_fundamentals(symbol).employees
     except MarketLensError as exc:
         raise LiveDataError(str(exc)) from exc
+    if employees is None:
+        employees = _uncached_headcount(symbol, YFinanceProvider, MarketLensError)
     return list(statements), employees
+
+
+def _uncached_headcount(
+    symbol: str, provider_type: Callable[[], Any], error_type: type[Exception]
+) -> int | None:
+    """Re-read headcount past the cache.
+
+    A fundamentals record cached by an older MarketLens has no headcount field
+    and decodes as ``None`` until it expires, so a missing value is checked
+    once against the live source before being accepted.
+    """
+    try:
+        headcount = provider_type().get_fundamentals(symbol).employees
+    except error_type:
+        return None
+    return int(headcount) if headcount is not None else None
 
 
 statements_source: StatementsSource = _marketlens_source

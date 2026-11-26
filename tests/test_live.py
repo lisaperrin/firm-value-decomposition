@@ -1,4 +1,5 @@
 import importlib.util
+import sys
 from dataclasses import replace
 
 import numpy as np
@@ -179,3 +180,81 @@ def test_marketlens_records_pass_through():
     result = decompose_live(make_statements("NVDA"), 36_000)
     assert result.symbol == "NVDA"
     assert result.by_year["year"].tolist() == [2022, 2023, 2024, 2025]
+
+
+class _FakeMarketLens:
+    """Minimal stand-ins for the MarketLens modules live mode imports lazily."""
+
+    def __init__(self, cached_employees, live_employees, live_raises=False):
+        import types
+        from dataclasses import dataclass
+
+        class MarketLensError(Exception):
+            pass
+
+        @dataclass
+        class Fundamentals:
+            employees: int | None
+
+        records = make_records("ACME")
+        calls = self.calls = {"cached": 0, "live": 0}
+
+        class YFinanceProvider:
+            def get_statements(self, symbol, years):
+                return records[-years:]
+
+            def get_fundamentals(self, symbol):
+                calls["live"] += 1
+                if live_raises:
+                    raise MarketLensError("info unavailable")
+                return Fundamentals(live_employees)
+
+        class CachedProvider:
+            def __init__(self, inner):
+                self.inner = inner
+
+            def get_statements(self, symbol, years):
+                return self.inner.get_statements(symbol, years)
+
+            def get_fundamentals(self, symbol):
+                calls["cached"] += 1
+                return Fundamentals(cached_employees)
+
+        self.modules = {
+            "marketlens": types.ModuleType("marketlens"),
+            "marketlens.data": types.ModuleType("marketlens.data"),
+            "marketlens.data.cache": types.ModuleType("marketlens.data.cache"),
+            "marketlens.data.yfinance_provider": types.ModuleType(
+                "marketlens.data.yfinance_provider"
+            ),
+            "marketlens.errors": types.ModuleType("marketlens.errors"),
+        }
+        self.modules["marketlens.data.cache"].CachedProvider = CachedProvider
+        self.modules["marketlens.data.yfinance_provider"].YFinanceProvider = YFinanceProvider
+        self.modules["marketlens.errors"].MarketLensError = MarketLensError
+
+    def install(self, monkeypatch):
+        for name, module in self.modules.items():
+            monkeypatch.setitem(sys.modules, name, module)
+
+
+@pytest.mark.parametrize(
+    ("cached", "live_value", "raises", "expected", "live_calls"),
+    [
+        (42_000, 99, False, 42_000, 0),
+        (None, 36_000, False, 36_000, 1),
+        (None, None, False, None, 1),
+        (None, 36_000, True, None, 1),
+    ],
+)
+def test_marketlens_source_rechecks_missing_headcount_past_the_cache(
+    monkeypatch, cached, live_value, raises, expected, live_calls
+):
+    import firmvalue.live as live
+
+    fake = _FakeMarketLens(cached, live_value, raises)
+    fake.install(monkeypatch)
+    statements, employees = live._marketlens_source("ACME", 3)
+    assert len(statements) == 3
+    assert employees == expected
+    assert fake.calls == {"cached": 1, "live": live_calls}
