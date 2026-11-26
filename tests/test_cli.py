@@ -3,8 +3,9 @@ import json
 import pandas as pd
 from typer.testing import CliRunner
 
-from firmvalue import __version__
+from firmvalue import __version__, live
 from firmvalue.cli import app
+from tests.live_fixtures import make_records
 
 runner = CliRunner()
 
@@ -106,5 +107,29 @@ def test_prepare_from_compustat(tmp_path):
     assert result.exit_code == 0, result.output
     assert len(pd.read_csv(out)) == 10
     result = runner.invoke(app, ["prepare", str(tmp_path / "nope.csv")])
+    assert result.exit_code == 1
+    assert "not found" in result.output
+
+
+def test_live_command(monkeypatch, tmp_path):
+    monkeypatch.setattr(live, "statements_source", lambda s, y: (make_records(s, y), 30_000))
+    result = runner.invoke(app, ["live", "ACME", "BETA", "--years", "3"])
+    assert result.exit_code == 0, result.output
+    assert "ACME fiscal 2025" in result.output
+    assert "BETA fiscal 2025" in result.output
+    assert "| input | stock | q | book share | market share |" in result.output
+    assert "illustrative" in result.output
+
+    panel_out = tmp_path / "live.csv"
+    result = runner.invoke(
+        app, ["--json", "live", "ACME", "--brand-share", "0.5", "--panel-out", str(panel_out)]
+    )
+    assert result.exit_code == 0, result.output
+    data = json.loads(result.output)["results"][0]
+    assert data["latest_fiscal_year"] == 2025
+    assert any("50% of SG&A" in note for note in data["notes"])
+    assert len(pd.read_csv(panel_out)) == 4
+
+    result = runner.invoke(app, ["live", "ACME", "--parameters", str(tmp_path / "nope.json")])
     assert result.exit_code == 1
     assert "not found" in result.output

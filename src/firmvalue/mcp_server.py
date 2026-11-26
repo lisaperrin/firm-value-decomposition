@@ -27,6 +27,7 @@ from firmvalue.io import (
     results_to_dict,
     share_table,
 )
+from firmvalue.live import LiveOptions, fetch_and_decompose
 from firmvalue.model import AdjustmentCost, Parameters, decompose
 from firmvalue.panel import flow_column, stock_column
 from firmvalue.reference import CITATION, published_shares
@@ -39,8 +40,9 @@ server = MCPServer(
         "Structural decomposition of firm value into physical capital, labor, knowledge "
         "capital and brand capital (Belo, Gala, Salomao and Vitorino, 2022). Use "
         "estimate_parameters on a firm-year panel CSV, value_shares for average shares, "
-        "decompose_firm for one firm-year given parameters, simulate_demo_panel to create a "
-        "synthetic panel, and published_value_shares for the paper's tables."
+        "decompose_firm for one firm-year given parameters, decompose_live for a listed "
+        "company from its published statements, simulate_demo_panel to create a synthetic "
+        "panel, and published_value_shares for the paper's tables."
     ),
 )
 
@@ -156,6 +158,41 @@ def decompose_firm(
             for name in INPUTS
         },
     }
+
+
+@server.tool()
+@_tool_errors
+def decompose_live(
+    symbol: str,
+    years: int = 4,
+    parameters_path: str | None = None,
+    group: str = "all",
+    brand_share_of_sga: float = 0.3,
+    tax_rate: float | None = None,
+    net_of_cash: bool = False,
+) -> dict[str, Any]:
+    """Decompose a listed company's value from its annual statements (Yahoo via MarketLens).
+
+    Stocks are built from net PP&E, capitalised R&D, a share of SG&A standing in for
+    advertising, and the latest headcount; market value is year-end price times shares
+    plus debt. Without ``parameters_path`` an illustrative calibration is applied and the
+    result says so. Every proxy used is listed under ``notes``.
+    """
+    params = None
+    source = None
+    if parameters_path is not None:
+        by_group = read_parameters(Path(parameters_path).expanduser())
+        key = group if group in by_group else "all"
+        if key not in by_group:
+            raise ToolError(f"{parameters_path} has no group {group!r} and no 'all' entry")
+        params, source = by_group[key], f"{parameters_path} [{key}]"
+    try:
+        options = LiveOptions(
+            brand_share_of_sga=brand_share_of_sga, tax_rate=tax_rate, net_of_cash=net_of_cash
+        )
+    except ValueError as exc:
+        raise ToolError(str(exc)) from exc
+    return fetch_and_decompose(symbol, years, params, source, options).to_dict()
 
 
 @server.tool()

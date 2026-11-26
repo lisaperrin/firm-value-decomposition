@@ -6,13 +6,15 @@ from typing import Any
 import pytest
 from mcp.server.mcpserver.exceptions import ToolError
 
-from firmvalue import mcp_server
+from firmvalue import live, mcp_server
 from firmvalue.simulate import SimulationDesign, simulate_panel
+from tests.live_fixtures import make_records
 
 EXPECTED_TOOLS = {
     "estimate_parameters",
     "value_shares",
     "decompose_firm",
+    "decompose_live",
     "simulate_demo_panel",
     "published_value_shares",
 }
@@ -34,7 +36,7 @@ def panel_path(tmp_path_factory: pytest.TempPathFactory) -> Path:
     return path
 
 
-def test_server_exposes_the_five_tools() -> None:
+def test_server_exposes_the_six_tools() -> None:
     names = {tool.name for tool in asyncio.run(mcp_server.server.list_tools())}
     assert names == EXPECTED_TOOLS
 
@@ -157,3 +159,29 @@ def test_published_value_shares_cites_the_paper() -> None:
 
 def test_main_is_an_entry_point() -> None:
     assert callable(mcp_server.main)
+
+
+def test_decompose_live_uses_the_statements_source(monkeypatch, tmp_path):
+    monkeypatch.setattr(live, "statements_source", lambda s, y: (make_records(s, y), 30_000))
+    data = call("decompose_live", symbol="ACME", years=3)
+    assert data["symbol"] == "ACME"
+    assert len(data["by_year"]) == 3
+    assert "illustrative" in data["parameters_source"]
+    assert sum(v["share"] for v in data["inputs"].values()) == pytest.approx(100.0)
+    params = tmp_path / "parameters.json"
+    params.write_text(
+        json.dumps({"all": {"parameters": {k: {"scale": v} for k, v in SCALES.items()}}})
+    )
+    data = call("decompose_live", symbol="ACME", parameters_path=str(params), group="low_skill")
+    assert data["parameters_source"].endswith("[all]")
+    with pytest.raises(ToolError, match="brand_share_of_sga"):
+        call("decompose_live", symbol="ACME", brand_share_of_sga=2.0)
+
+
+def test_decompose_live_reports_data_errors(monkeypatch):
+    def empty(symbol, years):
+        return [], None
+
+    monkeypatch.setattr(live, "statements_source", empty)
+    with pytest.raises(ToolError, match="no annual statements"):
+        call("decompose_live", symbol="NONE")

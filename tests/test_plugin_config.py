@@ -9,12 +9,13 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 PLUGIN_NAME = "firmvalue"
-EXPECTED_SKILLS = {"estimate", "decompose", "explain-model"}
+EXPECTED_SKILLS = {"estimate", "decompose", "explain-model", "live"}
 EXPECTED_AGENTS = {"structural-reviewer"}
 EXPECTED_MCP_TOOLS = {
     "estimate_parameters",
     "value_shares",
     "decompose_firm",
+    "decompose_live",
     "simulate_demo_panel",
     "published_value_shares",
 }

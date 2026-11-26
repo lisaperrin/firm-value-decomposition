@@ -16,6 +16,7 @@ from firmvalue import __version__
 from firmvalue.compustat import from_compustat
 from firmvalue.errors import FirmValueError, InputFileError
 from firmvalue.estimation import EstimationResult, estimate_by_group
+from firmvalue.inputs import INPUTS
 from firmvalue.io import (
     decompose_by_group,
     markdown_table,
@@ -25,6 +26,8 @@ from firmvalue.io import (
     share_table,
     write_parameters,
 )
+from firmvalue.live import LiveDecomposition, LiveOptions, fetch_and_decompose
+from firmvalue.model import Parameters
 from firmvalue.plotting import plot_share_panels
 from firmvalue.reference import CITATION, GROUPS, published_shares
 from firmvalue.simulate import SimulationDesign, simulate_panel
@@ -188,6 +191,75 @@ def figure(
     fig = plot_share_panels(_panels(decomposition), weighted=weighted)
     fig.savefig(out, dpi=200, bbox_inches="tight")
     _emit({"path": str(out)}, f"wrote {out}")
+
+
+def _live_text(result: LiveDecomposition) -> str:
+    latest = result.latest
+    rows = pd.DataFrame(
+        [
+            {
+                "input": str(name),
+                "stock": float(latest[f"{name}"]),
+                "q": float(latest[f"q_{name}"]),
+                "book share": 100.0 * float(latest[f"book_share_{name}"]),
+                "market share": 100.0 * float(latest[f"share_{name}"]),
+            }
+            for name in INPUTS
+        ]
+    )
+    lines = [
+        f"{result.symbol} fiscal {int(latest['year'])}, millions of {result.currency}, "
+        f"employees in thousands",
+        f"observed value {latest['observed_value']:,.0f}, implied {latest['implied_value']:,.0f}, "
+        f"book {latest['book_value']:,.0f} "
+        f"(ratios {latest['observed_ratio']:.2f} observed, {latest['implied_ratio']:.2f} implied)",
+        "",
+        markdown_table(rows),
+        f"parameters: {result.parameters_source}",
+        *(f"note: {note}" for note in result.notes),
+    ]
+    return "\n".join(lines)
+
+
+@app.command()
+@_handle_errors
+def live(
+    symbols: Annotated[list[str], typer.Argument(help="Ticker symbols, Yahoo style.")],
+    years: Annotated[int, typer.Option(min=2, help="Fiscal years of statements.")] = 4,
+    parameters: Annotated[
+        Path | None, typer.Option(help="Parameters JSON from `estimate`; default illustrative.")
+    ] = None,
+    group: Annotated[str, typer.Option(help="Group key inside the parameters file.")] = "all",
+    brand_share: Annotated[
+        float, typer.Option(min=0.0, max=1.0, help="Share of SG&A treated as advertising.")
+    ] = 0.30,
+    tax_rate: Annotated[
+        float | None, typer.Option(min=0.0, max=0.99, help="Override the statutory tax rate.")
+    ] = None,
+    net_of_cash: Annotated[bool, typer.Option(help="Subtract cash from market value.")] = False,
+    panel_out: Annotated[Path | None, typer.Option(help="Write the built panels to CSV.")] = None,
+) -> None:
+    """Decompose listed firms from their annual statements (needs the `live` extra)."""
+    params: Parameters | None = None
+    source: str | None = None
+    if parameters is not None:
+        by_group = read_parameters(parameters)
+        key = group if group in by_group else "all"
+        if key not in by_group:
+            raise InputFileError(f"{parameters} has no group {group!r} and no 'all' entry")
+        params, source = by_group[key], f"{parameters} [{key}]"
+    options = LiveOptions(
+        brand_share_of_sga=brand_share, tax_rate=tax_rate, net_of_cash=net_of_cash
+    )
+    results = [fetch_and_decompose(s, years, params, source, options) for s in symbols]
+    if panel_out is not None:
+        pd.concat([r.by_year.assign(symbol=r.symbol) for r in results]).to_csv(
+            panel_out, index=False
+        )
+    _emit(
+        {"results": [r.to_dict() for r in results]},
+        "\n\n".join(_live_text(r) for r in results),
+    )
 
 
 @app.command()
