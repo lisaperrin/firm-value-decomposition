@@ -94,4 +94,4 @@ source = ["firmvalue"]
 branch = true
 
 [tool.uv.sources]
-marketlens = { git = "https://github.com/lisaperrin/marketlens", rev = "c69adf3f8239e0c445ffe146d52801e95b9961b2" }
+marketlens = { git = "https://github.com/lisaperrin/marketlens", tag = "v0.3.0" }
