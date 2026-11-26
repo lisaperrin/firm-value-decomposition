@@ -139,9 +139,12 @@ The repository is itself a Claude Code plugin. Install it in one step:
 /plugin install firmvalue --marketplace lisaperrin/firm-value-decomposition
 ```
 
-The MCP server is launched with `uvx` from the installed plugin folder, so
-[uv](https://docs.astral.sh/uv/) must be on your PATH. The first launch builds
+The MCP server is launched with `uvx` from the installed plugin folder with
+the `live` extra, so [uv](https://docs.astral.sh/uv/) must be on your PATH and
+git must be able to reach the MarketLens repository. The first launch builds
 the server's environment and can take a minute; later launches are instant.
+The plugin does not depend on the MarketLens plugin: it uses MarketLens as a
+library, and the two plugins can be installed together or separately.
 
 | Component | Name | What it does |
 |-----------|------|--------------|

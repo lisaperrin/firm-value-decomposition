@@ -61,7 +61,9 @@ def test_mcp_config_launches_the_server_from_the_installed_plugin() -> None:
     server = config["mcpServers"][PLUGIN_NAME]
     assert server["command"] == "uvx"
     assert server["args"][-1] == "firmvalue-mcp"
-    assert "${CLAUDE_PLUGIN_ROOT}" in server["args"], "must run from the plugin checkout"
+    source = server["args"][server["args"].index("--from") + 1]
+    assert source.startswith("${CLAUDE_PLUGIN_ROOT}"), "must run from the plugin checkout"
+    assert source.endswith("[live]"), "the plugin's server must include live mode"
 
 
 def test_skills_exist_with_frontmatter() -> None:
