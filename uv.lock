@@ -1221,7 +1221,7 @@ wheels = [
 [[package]]
 name = "marketlens"
 version = "0.3.1"
-source = { git = "https://github.com/lisaperrin/marketlens?tag=v0.3.1#d8a43b8f7f13320fdfc80d1ead194e2d44e72bc7" }
+source = { git = "https://github.com/lisaperrin/marketlens?tag=v0.3.1#e26e3183d0e3029edd921a0c4341665642ad2ed1" }
 dependencies = [
     { name = "mcp" },
     { name = "pandas" },
